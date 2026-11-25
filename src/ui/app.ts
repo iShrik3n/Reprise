@@ -5,7 +5,6 @@
 import { ANALYSIS_SAMPLE_RATE, WEIGHT_PRESETS, type WeightPreset } from '../analysis/types';
 import { decodeToMono, looksLikeAudio } from '../audio/decode';
 import { renderDemo } from '../audio/demo';
-import { Duet, duetPair } from '../audio/duet';
 import { Player } from '../audio/player';
 import { encodeWav } from '../audio/wav';
 import type { ColorMode } from '../color/frameColor';
@@ -20,7 +19,7 @@ import { attachPointer } from './pointer';
 import { Progress } from './progress';
 import { loadSettings, saveSettings, type Settings } from './settings';
 import { Stage } from './stage';
-import { describePoint, formatTime, type PointInfo } from './timeline';
+import { describePoint, formatTime } from './timeline';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -36,16 +35,12 @@ export class App {
   private readonly progress = new Progress($('progress'));
   private readonly client = new AnalysisClient();
   private readonly player = new Player();
-  private readonly duet = new Duet();
   private readonly title = $('title');
   private readonly meta = $('meta');
   private readonly clock = $('clock');
   private readonly playButton = $<HTMLButtonElement>('play');
   private readonly exportButton = $<HTMLButtonElement>('export');
   private readonly tooltip = $('tooltip');
-  private readonly duetBar = $('duet-bar');
-  private readonly duetTimes = $('duet-times');
-  private readonly duetMixInput = $<HTMLInputElement>('duet-mix');
   private readonly message = $('message');
   private readonly settings: Settings = loadSettings();
   private runId = 0;
@@ -54,12 +49,6 @@ export class App {
   private songTitle = '';
   private current: RenderPayload | null = null;
   private rafId = 0;
-  /** What's playing, kept for decoding the duet at full quality on first use. */
-  private source: Blob | null = null;
-  /** When on, a click on the image starts a duet instead of seeking. */
-  private duetMode = false;
-  private duetStart: { row0: number; col0: number; earlier0: number; later0: number } | null = null;
-  private duetRaf = 0;
 
   start(): void {
     setupFileInput($<HTMLButtonElement>('open'), $<HTMLInputElement>('file'), (f) => void this.loadFile(f));
@@ -68,7 +57,6 @@ export class App {
     this.setupArtworkPointer();
     this.setupKeyboard();
     this.setupIdle();
-    this.setupDuet();
     this.stage.onLayout = () => this.overlay.request();
     void this.loadDemo();
   }
@@ -83,8 +71,7 @@ export class App {
     if (id !== this.runId) return;
     const samples = renderDemo(ANALYSIS_SAMPLE_RATE);
     // Encode for playback before the samples are transferred (and detached) to the worker.
-    this.source = new Blob([encodeWav(samples, ANALYSIS_SAMPLE_RATE)], { type: 'audio/wav' });
-    this.player.load(this.source);
+    this.player.load(new Blob([encodeWav(samples, ANALYSIS_SAMPLE_RATE)], { type: 'audio/wav' }));
     await this.run(id, samples, ANALYSIS_SAMPLE_RATE);
   }
 
@@ -96,7 +83,6 @@ export class App {
     const id = ++this.runId;
     this.begin(file.name.replace(/\.[^.]+$/, ''));
     this.progress.show('decoding');
-    this.source = file;
     this.player.load(file);
     try {
       const decoded = await decodeToMono(await file.arrayBuffer(), ANALYSIS_SAMPLE_RATE);
@@ -108,8 +94,6 @@ export class App {
   }
 
   private begin(title: string): void {
-    this.stopDuet();
-    this.duet.release();
     this.showMessage('');
     this.songTitle = title;
     this.title.textContent = title;
@@ -188,10 +172,7 @@ export class App {
     for (const ev of ['play', 'pause', 'ended', 'seeked', 'loadedmetadata', 'emptied']) {
       audio.addEventListener(ev, () => this.syncTransport());
     }
-    audio.addEventListener('play', () => {
-      this.stopDuet(); // one kind of playback at a time
-      this.loop();
-    });
+    audio.addEventListener('play', () => this.loop());
   }
 
   /** While playing, move the playhead every frame. */
@@ -233,17 +214,13 @@ export class App {
         const { fx, fy } = this.stage.toFraction(x, y);
         if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return this.hideTooltip();
         this.overlay.set({ hover: { fx, fy } });
-        const info = describePoint(this.current.mode, this.current.binEdges, fx, fy);
-        const hint = this.duetMode && duetPair(info.a, info.b) ? ' · click to hear both' : '';
-        this.showTooltip(info.label + hint, x, y);
+        this.showTooltip(describePoint(this.current.mode, this.current.binEdges, fx, fy).label, x, y);
       },
       leave: () => this.hideTooltip(),
-      tap: (x, y, shift) => {
+      tap: (x, y) => {
         if (!this.current) return;
         const { fx, fy } = this.stage.toFraction(x, y);
-        const info = describePoint(this.current.mode, this.current.binEdges, fx, fy);
-        if (this.duetMode || shift) void this.startDuet(info);
-        else this.seek(info.seek, true);
+        this.seek(describePoint(this.current.mode, this.current.binEdges, fx, fy).seek, true);
       },
     });
   }
@@ -333,92 +310,15 @@ export class App {
     }
   }
 
-  // ── duet: hear (X+N) and (Y+N) together ───────────────────
-
-  private setupDuet(): void {
-    toggle($<HTMLButtonElement>('duet'), false, (on) => {
-      this.duetMode = on;
-      if (on) this.duet.unlock(); // this click is a user gesture: unlock audio now (Safari is strict)
-      else this.stopDuet();
-    });
-    this.stage.overlay.addEventListener('pointerdown', (e) => {
-      if (this.duetMode || e.shiftKey) this.duet.unlock();
-    });
-    $('duet-stop').addEventListener('click', () => this.stopDuet());
-    this.duetMixInput.addEventListener('input', () => this.duet.setMix(Number(this.duetMixInput.value)));
-    this.duetMixInput.addEventListener('dblclick', () => {
-      this.duetMixInput.value = '0';
-      this.duet.setMix(0);
-    });
-    this.duet.onEnded = () => this.stopDuet();
-  }
-
-  /** Start two sample-locked playheads at the two moments a pixel compares. */
-  private async startDuet(info: PointInfo): Promise<void> {
-    const pair = duetPair(info.a, info.b);
-    if (!pair || !this.source || !this.current) return;
-    this.duet.unlock(); // must happen synchronously inside the click
-    this.player.pause();
-    this.stopDuet();
-    const run = this.runId;
-    const square = this.current.mode !== 'lag';
-    this.duetBar.hidden = false;
-    this.duetTimes.textContent = 'preparing…';
-    try {
-      await this.duet.prepare(this.source);
-    } catch (err) {
-      if (run !== this.runId) return;
-      this.duetBar.hidden = true;
-      this.fail(new Error("Couldn't prepare the duet audio in this browser.", { cause: err }));
-      return;
-    }
-    if (run !== this.runId) return;
-    this.duet.setMix(Number(this.duetMixInput.value));
-    this.duet.start(pair);
-    if (!this.duet.active) {
-      this.duetBar.hidden = true; // too close to the end of the song to play anything
-      return;
-    }
-    this.duetStart = {
-      row0: square ? info.a : pair.earlier,
-      col0: square ? info.b! : pair.later,
-      earlier0: pair.earlier,
-      later0: pair.later,
-    };
-    const tick = () => {
-      const pos = this.duet.position();
-      if (!pos || !this.duetStart) return;
-      const n = pos.earlier - this.duetStart.earlier0;
-      this.overlay.set({ duet: { ...this.duetStart, n } });
-      const text = `${formatTime(pos.earlier)} ↔ ${formatTime(pos.later)}`;
-      if (this.duetTimes.textContent !== text) this.duetTimes.textContent = text;
-      this.duetRaf = requestAnimationFrame(tick);
-    };
-    cancelAnimationFrame(this.duetRaf);
-    this.duetRaf = requestAnimationFrame(tick);
-  }
-
-  private stopDuet(): void {
-    this.duet.stop();
-    cancelAnimationFrame(this.duetRaf);
-    this.duetStart = null;
-    this.duetBar.hidden = true;
-    if (this.overlay.state.duet) this.overlay.set({ duet: null });
-  }
-
   // ── keyboard & idle ────────────────────────────────────────
 
   private setupKeyboard(): void {
     window.addEventListener('keydown', (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.code === 'Escape' && this.duet.active) return this.stopDuet();
-      // Inputs (the duet slider, the file picker) keep their own keys.
-      if (e.target instanceof HTMLInputElement) return;
-      const onControl = e.target instanceof HTMLButtonElement;
+      const onControl = e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement;
       if (e.code === 'Space' && !onControl) {
         e.preventDefault();
-        if (this.duet.active) this.stopDuet();
-        else this.player.toggle();
+        this.player.toggle();
       } else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
         e.preventDefault();
         this.seek(this.player.time + (e.code === 'ArrowLeft' ? -SEEK_STEP_S : SEEK_STEP_S), false);

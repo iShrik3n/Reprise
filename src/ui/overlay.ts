@@ -17,12 +17,10 @@ export interface OverlayState {
   light: boolean;
   playhead: number | null;
   hover: { fx: number; fy: number } | null;
-  /** An active duet: the clicked pixel's row/column times, its earlier/later moments, and elapsed N. */
-  duet: { row0: number; col0: number; earlier0: number; later0: number; n: number } | null;
 }
 
 export class Overlay {
-  readonly state: OverlayState = { mode: 'bloom', edges: null, light: false, playhead: null, hover: null, duet: null };
+  readonly state: OverlayState = { mode: 'bloom', edges: null, light: false, playhead: null, hover: null };
   private queued = false;
 
   constructor(private readonly stage: Stage) {}
@@ -47,14 +45,14 @@ export class Overlay {
     const ctx = overlay.getContext('2d')!;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, overlay.width, overlay.height);
-    const { edges, mode, playhead, hover, light, duet } = this.state;
+    const { edges, mode, playhead, hover, light } = this.state;
     if (!edges) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const ink = (a: number) => (light ? `rgba(18, 18, 24, ${a})` : `rgba(255, 246, 228, ${a})`);
     const halo = (a: number) => (light ? `rgba(255, 255, 255, ${a})` : `rgba(0, 0, 0, ${a})`);
-    const line = (x0: number, y0: number, x1: number, y1: number, alpha: number, dash: number[] = [], width = 1) => {
+    const line = (x0: number, y0: number, x1: number, y1: number, alpha: number, dash: number[] = []) => {
       ctx.setLineDash(dash);
-      ctx.lineWidth = width;
+      ctx.lineWidth = 1;
       ctx.strokeStyle = ink(alpha);
       ctx.beginPath();
       ctx.moveTo(x0, y0);
@@ -74,33 +72,7 @@ export class Overlay {
     };
     const snap = (v: number) => Math.round(v * dpr) / dpr + 0.5 / dpr; // crisp 1-px lines
 
-    const fr = (t: number) => fractionAtTime(edges, t) * S;
-
-    if (duet) {
-      // Both playheads advance by the same N: the marker slides parallel to the diagonal.
-      const { row0, col0, earlier0, later0, n } = duet;
-      const e = fr(earlier0 + n);
-      const l = fr(later0 + n);
-      ctx.lineCap = 'round';
-      if (mode === 'lag') {
-        const y = (1 - (later0 - earlier0) / edges[edges.length - 1]) * S;
-        line(fr(later0), y, l, y, 0.75, [], 1.5);
-        line(l, y, l, S, 0.35, [2, 3]);
-        line(l, y, e, S, 0.35, [2, 3]);
-        dot(e, S - 3, 3, 0.95);
-        dot(l, S - 3, 3, 0.95);
-        dot(l, y, 4, 1);
-      } else {
-        const x = fr(col0 + n);
-        const y = fr(row0 + n);
-        line(fr(col0), fr(row0), x, y, 0.75, [], 1.5);
-        line(x, y, y, y, 0.35, [2, 3]);
-        line(x, y, x, x, 0.35, [2, 3]);
-        dot(e, e, 3, 0.95);
-        dot(l, l, 3, 0.95);
-        dot(x, y, 4, 1);
-      }
-    } else if (playhead !== null) {
+    if (playhead !== null) {
       const p = snap(fractionAtTime(edges, playhead) * S);
       if (mode === 'lag') {
         line(p, 0, p, S, 0.35);
