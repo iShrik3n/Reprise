@@ -18,6 +18,7 @@ import {
   DEFAULT_OPTIONS,
   type AnalysisOptions,
   type BinFeatures,
+  type FrameFeatures,
   type ProgressFn,
   type SimilarityMatrix,
   type SimilarityWeights,
@@ -39,6 +40,7 @@ export interface RenderPayload {
   size: number;
   duration: number;
   mode: RenderMode;
+  palette: PaletteId;
   binEdges: Float64Array<ArrayBuffer>;
   rgba: Uint8ClampedArray<ArrayBuffer>;
   /** Milliseconds per stage that actually ran, for diagnostics. */
@@ -58,6 +60,7 @@ function slice(onProgress: ProgressFn | undefined, from: number, to: number): Pr
 export class AnalysisEngine {
   private options: AnalysisOptions = DEFAULT_OPTIONS;
   private view: ViewSettings = DEFAULT_VIEW;
+  private frames: FrameFeatures | null = null;
   private bins: BinFeatures | null = null;
   private descriptors: FrameDescriptors | null = null;
   private raw: SimilarityMatrix | null = null;
@@ -79,6 +82,7 @@ export class AnalysisEngine {
     const frames = this.time('features', () =>
       extractFeatures(samples, sampleRate, this.options, slice(onProgress, 0, 0.75)),
     );
+    this.frames = frames; // ~2 MB for a 6-min song; kept for high-resolution export
     this.bins = this.time('binning', () => binFeatures(frames, this.options.maxBins));
     this.descriptors = this.time('descriptors', () => frameDescriptors(this.bins!));
     this.raw = this.display = this.mask = this.colors = null;
@@ -103,6 +107,50 @@ export class AnalysisEngine {
 
   getView(): ViewSettings {
     return { ...this.view };
+  }
+
+  /**
+   * Render the current view natively at up to `size`×`size` for a poster: the frame features
+   * are re-binned at the higher resolution and every stage is recomputed (nothing is upscaled).
+   * Songs with fewer frames than `size` come back at their frame count; the caller upscales.
+   * Uses its own temporaries, so the cached on-screen state is untouched.
+   */
+  export(size: number, onProgress?: ProgressFn): RenderPayload {
+    if (!this.frames) throw new Error('Nothing analyzed yet');
+    this.timings = {};
+    const view = this.view;
+    const palette = PALETTES[view.palette];
+    const bins = this.time('binning', () => binFeatures(this.frames!, size));
+    let s = this.time('matrix', () =>
+      weightedSimilarity(bins.chroma, bins.mfcc, this.options.weights, {
+        silent: bins.silent,
+        energyDb: bins.rmsDb,
+        onProgress: slice(onProgress, 0, 0.45),
+      }),
+    );
+    onProgress?.('enhancing', 0.5);
+    this.time('enhance', () => {
+      const radius = view.enhance ? enhanceRadius(bins.duration / bins.size) : 0;
+      if (radius > 0) s = enhancePaths(s, radius, 0.5);
+      s = contrastStretch(s, undefined, undefined, undefined, true);
+    });
+    onProgress?.('painting', 0.65);
+    const rgba = this.time('paint', () => {
+      if (view.mode === 'heatmap') return paintHeatmap(s, palette);
+      if (view.mode === 'print') return paintPrint(recurrencePlot(s), bins.size, palette);
+      const colors = frameColors(frameDescriptors(bins), bins.silent, palette);
+      return view.mode === 'lag' ? paintLag(s, colors, palette) : paintBloom(s, colors, palette);
+    });
+    onProgress?.('painting', 1);
+    return {
+      size: bins.size,
+      duration: bins.duration,
+      mode: view.mode,
+      palette: view.palette,
+      binEdges: Float64Array.from(bins.binEdges),
+      rgba,
+      timings: this.timings,
+    };
   }
 
   /** Recompute whatever was invalidated, then paint the current mode. */
@@ -147,6 +195,7 @@ export class AnalysisEngine {
       size: bins.size,
       duration: bins.duration,
       mode: this.view.mode,
+      palette: this.view.palette,
       binEdges: Float64Array.from(bins.binEdges),
       rgba,
       timings: this.timings,

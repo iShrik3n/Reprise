@@ -11,7 +11,8 @@ export type WorkerRequest =
       options?: Partial<AnalysisOptions>;
       view?: Partial<ViewSettings>;
     }
-  | ({ type: 'update'; id: number } & UpdateRequest);
+  | ({ type: 'update'; id: number } & UpdateRequest)
+  | { type: 'export'; id: number; size: number };
 
 export type WorkerResponse =
   | { type: 'progress'; id: number; stage: string; fraction: number }

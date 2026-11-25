@@ -2,16 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0a0a0b" />
+    <meta name="description" content="Reprise turns a song into a time × time artwork. Repetition becomes geometry, and the colors come from the sound. Runs entirely in your browser." />
     <title>Reprise</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0b'/%3E%3Cpath d='M2 2L14 14M2 8L8 14M8 2L14 8' stroke='%23d8c8a8' stroke-width='1.2'/%3E%3C/svg%3E" />
   </head>
   <body>
     <main id="stage" aria-label="Artwork">
-      <canvas id="art" role="img" aria-label="Self-similarity matrix of the current song"></canvas>
+      <div id="frame">
+        <canvas id="art" role="img" aria-label="Self-similarity matrix of the current song"></canvas>
+        <canvas id="overlay" aria-hidden="true"></canvas>
+      </div>
     </main>
+
+    <div id="tooltip" role="status" hidden></div>
 
     <div id="progress" hidden>
       <div class="bar"></div>
@@ -19,9 +25,10 @@
     </div>
 
     <footer id="controls">
-      <div class="caption">
-        <span id="title">—</span>
-        <span id="meta" class="dim"></span>
+      <div class="left">
+        <button id="play" class="transport" type="button" aria-label="Play">play</button>
+        <span id="clock" class="dim" aria-live="off">0:00</span>
+        <span class="caption"><span id="title">—</span><span id="meta" class="dim"></span></span>
       </div>
       <div class="actions">
         <span id="mode" class="switch" role="group" aria-label="Render mode"></span>
@@ -30,13 +37,14 @@
         </span>
         <span id="palettes" class="swatches" role="group" aria-label="Palette"></span>
         <button id="enhance" class="toggle" type="button" title="Path enhancement: smooth along diagonals so repeated passages read as clean lines">enhance</button>
+        <button id="export" type="button" title="Save a 4096 × 4096 PNG for printing">export</button>
         <button id="open" type="button">open a song</button>
         <input id="file" type="file" hidden />
       </div>
     </footer>
 
     <div id="drop-hint" aria-hidden="true"><span>drop to listen</span></div>
-    <div id="message" role="status" aria-live="polite"></div>
+    <div id="message" role="alert" aria-live="assertive"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

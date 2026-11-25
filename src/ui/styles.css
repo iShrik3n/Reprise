@@ -6,7 +6,7 @@
   --accent: #d8c8a8;
   --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
-  --gutter: 56px;
+  --gutter: 48px;
 }
 
 @media (max-width: 640px) {
@@ -29,27 +29,66 @@ body {
   letter-spacing: 0.02em;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
+
+/* ── artwork ─────────────────────────────────────────────── */
 
 #stage {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 80px; /* set from JS to the control strip's height */
   display: grid;
   place-items: center;
+  padding-top: var(--gutter);
+}
+
+#frame {
+  position: relative;
+  box-shadow: 0 0 90px rgba(0, 0, 0, 0.65);
+}
+
+#art,
+#overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 #art {
-  display: block;
   background: #000;
-  box-shadow: 0 0 80px rgba(0, 0, 0, 0.6);
   transition: opacity 400ms ease;
 }
-
 #art.loading {
   opacity: 0.35;
 }
 
-/* Hairline progress across the top. */
+#overlay {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+#tooltip {
+  position: fixed;
+  z-index: 5;
+  pointer-events: none;
+  padding: 4px 7px;
+  font: 11px var(--mono);
+  color: var(--fg);
+  background: rgba(10, 10, 11, 0.82);
+  border: 1px solid var(--hair);
+  border-radius: 2px;
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* ── progress & messages ─────────────────────────────────── */
+
 #progress {
   position: fixed;
   top: 0;
@@ -57,6 +96,7 @@ body {
   right: 0;
   height: 18px;
   pointer-events: none;
+  z-index: 4;
 }
 #progress .bar {
   height: 1px;
@@ -72,19 +112,46 @@ body {
   color: var(--dim);
 }
 
+#message {
+  position: fixed;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100vw - 32px));
+  color: #e7a48a;
+  text-align: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* ── control strip ───────────────────────────────────────── */
+
 #controls {
   position: fixed;
   left: var(--gutter);
   right: var(--gutter);
-  bottom: 14px;
+  bottom: max(14px, env(safe-area-inset-bottom));
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 16px;
-  pointer-events: none;
+  align-items: center;
+  gap: 8px 24px;
+  transition: opacity 700ms ease;
+  z-index: 3;
 }
-#controls > * {
-  pointer-events: auto;
+
+/* Gallery mode: after a while without input, only the artwork remains. */
+body.idle #controls:not(:focus-within):not(:hover) {
+  opacity: 0;
+}
+body.idle #overlay {
+  cursor: none;
+}
+
+.left {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
 }
 .caption {
   min-width: 0;
@@ -96,7 +163,13 @@ body {
   color: var(--dim);
   font-family: var(--mono);
   font-size: 11px;
+}
+.caption .dim {
   margin-left: 10px;
+}
+#clock {
+  font-variant-numeric: tabular-nums;
+  min-width: 7.5em;
 }
 
 button {
@@ -114,6 +187,14 @@ button:focus-visible {
   border-bottom-color: var(--accent);
   outline: none;
 }
+button:disabled {
+  color: var(--dim);
+  cursor: progress;
+}
+.transport {
+  min-width: 3em;
+  text-align: left;
+}
 
 .actions {
   display: flex;
@@ -128,9 +209,6 @@ button:focus-visible {
   display: inline-flex;
   align-items: baseline;
   gap: 10px;
-}
-.switch .dim {
-  margin-left: 0;
 }
 .switch button {
   color: var(--dim);
@@ -148,7 +226,7 @@ button:focus-visible {
 
 .swatches {
   display: inline-flex;
-  gap: 7px;
+  gap: 8px;
   align-items: center;
 }
 .swatch {
@@ -157,9 +235,11 @@ button:focus-visible {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--swatch-bg), 0 0 0 3px rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 0 0 2px var(--swatch-bg),
+    0 0 0 3px rgba(255, 255, 255, 0.08);
   opacity: 0.55;
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition: opacity 120ms ease;
 }
 .swatch:hover,
 .swatch:focus-visible {
@@ -167,23 +247,37 @@ button:focus-visible {
 }
 .swatch[aria-pressed='true'] {
   opacity: 1;
-  box-shadow: 0 0 0 2px var(--swatch-bg), 0 0 0 3px var(--accent);
+  box-shadow:
+    0 0 0 2px var(--swatch-bg),
+    0 0 0 3px var(--accent);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   #controls {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
+    align-items: stretch;
   }
   .actions {
     justify-content: flex-start;
     column-gap: 16px;
   }
-  .switch .dim {
+  .switch > .dim {
     display: none;
   }
 }
+
+@media (hover: none) {
+  /* Touch: slightly larger targets. */
+  button {
+    padding: 6px 0;
+  }
+  .swatch {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* ── drag & drop ─────────────────────────────────────────── */
 
 #drop-hint {
   position: fixed;
@@ -196,18 +290,14 @@ button:focus-visible {
   transition: opacity 150ms ease;
   color: var(--dim);
   font-size: 13px;
+  z-index: 6;
 }
 body.dragging #drop-hint {
   opacity: 1;
 }
 
-#message {
-  position: fixed;
-  top: 22px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: min(520px, calc(100vw - 32px));
-  color: #e7a48a;
-  text-align: center;
-  pointer-events: none;
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }

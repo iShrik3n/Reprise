@@ -44,6 +44,9 @@ scope.onmessage = (e: MessageEvent<WorkerRequest>) => {
       case 'update':
         sendResult(msg.id, engine.update({ weights: msg.weights, view: msg.view }, throttledProgress(msg.id)));
         break;
+      case 'export':
+        sendResult(msg.id, engine.export(msg.size, throttledProgress(msg.id)));
+        break;
     }
   } catch (err) {
     post({ type: 'error', id: msg.id, message: err instanceof Error ? err.message : String(err) });

@@ -1,0 +1,107 @@
+/**
+ * Playhead and hover guides, drawn on a transparent canvas above the artwork.
+ *
+ * Square modes: the playhead is a cross-hair through (t, t) on the diagonal. Hovering (i, j)
+ * draws guides from the point back to the two diagonal moments it compares.
+ * Lag mode: the playhead is a vertical line at t. Hovering (t, ℓ) links the point to the two
+ * compared moments on the bottom (lag-0) row: t, and its echo t − ℓ.
+ */
+import type { RenderMode } from '../render/painters';
+import { describePoint, fractionAtTime } from './timeline';
+import type { Stage } from './stage';
+
+export interface OverlayState {
+  mode: RenderMode;
+  edges: Float64Array | null;
+  /** Light artwork (paper/print) needs dark ink for the guides. */
+  light: boolean;
+  playhead: number | null;
+  hover: { fx: number; fy: number } | null;
+}
+
+export class Overlay {
+  readonly state: OverlayState = { mode: 'bloom', edges: null, light: false, playhead: null, hover: null };
+  private queued = false;
+
+  constructor(private readonly stage: Stage) {}
+
+  set(patch: Partial<OverlayState>): void {
+    Object.assign(this.state, patch);
+    this.request();
+  }
+
+  /** Coalesce redraws into the next animation frame. */
+  request(): void {
+    if (this.queued) return;
+    this.queued = true;
+    requestAnimationFrame(() => {
+      this.queued = false;
+      this.draw();
+    });
+  }
+
+  private draw(): void {
+    const { overlay, cssSize: S, dpr } = this.stage;
+    const ctx = overlay.getContext('2d')!;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    const { edges, mode, playhead, hover, light } = this.state;
+    if (!edges) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const ink = (a: number) => (light ? `rgba(18, 18, 24, ${a})` : `rgba(255, 246, 228, ${a})`);
+    const halo = (a: number) => (light ? `rgba(255, 255, 255, ${a})` : `rgba(0, 0, 0, ${a})`);
+    const line = (x0: number, y0: number, x1: number, y1: number, alpha: number, dash: number[] = []) => {
+      ctx.setLineDash(dash);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = ink(alpha);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+    };
+    const dot = (x: number, y: number, r: number, alpha: number) => {
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(x, y, r + 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = halo(0.45 * alpha);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = ink(alpha);
+      ctx.fill();
+    };
+    const snap = (v: number) => Math.round(v * dpr) / dpr + 0.5 / dpr; // crisp 1-px lines
+
+    if (playhead !== null) {
+      const p = snap(fractionAtTime(edges, playhead) * S);
+      if (mode === 'lag') {
+        line(p, 0, p, S, 0.35);
+        dot(p, S - 3, 3, 0.95);
+      } else {
+        line(p, 0, p, S, 0.28);
+        line(0, p, S, p, 0.28);
+        dot(p, p, 3.5, 0.95);
+      }
+    }
+
+    if (hover && hover.fx >= 0 && hover.fx <= 1 && hover.fy >= 0 && hover.fy <= 1) {
+      const x = hover.fx * S;
+      const y = hover.fy * S;
+      if (mode === 'lag') {
+        const info = describePoint(mode, edges, hover.fx, hover.fy);
+        line(x, y, x, S, 0.5, [2, 3]);
+        dot(x, S - 3, 2.5, 0.85);
+        if (info.b !== null) {
+          const ex = fractionAtTime(edges, info.b) * S;
+          line(x, y, ex, S, 0.5, [2, 3]);
+          dot(ex, S - 3, 2.5, 0.85);
+        }
+      } else {
+        line(x, y, y, y, 0.5, [2, 3]); // along the row back to moment a on the diagonal
+        line(x, y, x, x, 0.5, [2, 3]); // along the column back to moment b
+        dot(y, y, 2.5, 0.85);
+        dot(x, x, 2.5, 0.85);
+      }
+    }
+  }
+}

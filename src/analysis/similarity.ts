@@ -89,13 +89,20 @@ export function weightedSimilarity(
 /**
  * Rescale so that the `lowQ` quantile maps to 0 and `highQ` to 1, then apply a gamma.
  * Raw cosine values often sit in a narrow band (e.g. 0.6–1.0 for chroma); stretching that
- * band to the full range is what makes structure visible.
+ * band to the full range is what makes structure visible. `inPlace` reuses the input buffer
+ * (saves 64 MB on a 4096² export).
  */
-export function contrastStretch(s: SimilarityMatrix, lowQ = 0.05, highQ = 0.99, gamma = 1.6): SimilarityMatrix {
+export function contrastStretch(
+  s: SimilarityMatrix,
+  lowQ = 0.05,
+  highQ = 0.99,
+  gamma = 1.6,
+  inPlace = false,
+): SimilarityMatrix {
   const lo = quantile(s.data, lowQ);
   const hi = quantile(s.data, highQ);
   const range = hi - lo > 1e-6 ? hi - lo : 1;
-  const out = new Float32Array(s.data.length);
+  const out = inPlace ? s.data : new Float32Array(s.data.length);
   for (let i = 0; i < out.length; i++) {
     let v = (s.data[i] - lo) / range;
     v = v < 0 ? 0 : v > 1 ? 1 : v;

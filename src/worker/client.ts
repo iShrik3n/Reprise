@@ -44,6 +44,11 @@ export class AnalysisClient {
     return this.request({ type: 'update', id: 0, ...req }, onProgress);
   }
 
+  /** Render the current view natively at up to size×size (for the poster export). */
+  exportImage(size: number, onProgress?: ProgressFn): Promise<RenderPayload> {
+    return this.request({ type: 'export', id: 0, size }, onProgress);
+  }
+
   private request(msg: WorkerRequest, onProgress?: ProgressFn, transfer: Transferable[] = []): Promise<RenderPayload> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {

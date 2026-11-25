@@ -53,3 +53,25 @@ describe('AnalysisEngine (worker core)', () => {
     }
   });
 });
+
+describe('poster export', () => {
+  it('re-renders natively at a higher resolution without disturbing the on-screen state', () => {
+    const engine = new AnalysisEngine();
+    engine.analyze(renderDemo(SR), SR, { maxBins: 128 }, { mode: 'lag', palette: 'ink' });
+    const big = engine.export(512);
+    expect(big.size).toBe(512);
+    expect(big.mode).toBe('lag');
+    expect(big.rgba.length).toBe(512 * 512 * 4);
+    expect(big.binEdges[512]).toBeCloseTo(48, 3);
+    // The cached 128² state is intact: a palette change is still a repaint at 128.
+    const after = engine.update({ view: { palette: 'ember' } });
+    expect(after.size).toBe(128);
+    expect(Object.keys(after.timings)).toEqual(['paint']);
+  });
+
+  it('caps at the number of frames for short songs', () => {
+    const engine = new AnalysisEngine();
+    engine.analyze(renderDemo(SR).subarray(0, SR * 2), SR, { maxBins: 64 });
+    expect(engine.export(4096).size).toBe(Math.ceil((2 * SR) / 512));
+  });
+});

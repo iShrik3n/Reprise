@@ -1,15 +1,25 @@
 /**
- * The artwork canvas: keeps an N×N source image and draws it scaled to a centered
- * square that fits the viewport, at device-pixel resolution.
+ * The artwork: an N×N source image drawn scaled into a centered square, plus a transparent
+ * overlay canvas of the same size for the playhead and hover guides. The square is sized to
+ * the space left above the control strip, so the two never overlap.
  */
 export class Stage {
   private readonly source = document.createElement('canvas');
   private hasImage = false;
   /** Square side in CSS pixels. */
   cssSize = 0;
+  dpr = 1;
+  onLayout: (() => void) | null = null;
 
-  constructor(readonly canvas: HTMLCanvasElement) {
+  constructor(
+    private readonly root: HTMLElement,
+    private readonly frame: HTMLElement,
+    readonly canvas: HTMLCanvasElement,
+    readonly overlay: HTMLCanvasElement,
+    private readonly controls: HTMLElement,
+  ) {
     window.addEventListener('resize', () => this.layout());
+    new ResizeObserver(() => this.layout()).observe(controls);
     this.layout();
   }
 
@@ -25,16 +35,30 @@ export class Stage {
     this.canvas.classList.toggle('loading', on);
   }
 
-  private layout(): void {
-    const gutter = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gutter')) || 16;
-    const size = Math.max(64, Math.floor(Math.min(window.innerWidth, window.innerHeight) - 2 * gutter));
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  /** Pointer position → fractions of the square (may fall outside 0..1). */
+  toFraction(clientX: number, clientY: number): { fx: number; fy: number } {
+    const r = this.canvas.getBoundingClientRect();
+    return { fx: (clientX - r.left) / r.width, fy: (clientY - r.top) / r.height };
+  }
+
+  layout(): void {
+    const css = getComputedStyle(document.documentElement);
+    const gutter = parseFloat(css.getPropertyValue('--gutter')) || 16;
+    const reserve = Math.ceil(this.controls.getBoundingClientRect().height) + 28;
+    this.root.style.bottom = `${reserve}px`;
+    const availW = window.innerWidth - 2 * gutter;
+    const availH = window.innerHeight - reserve - gutter;
+    const size = Math.max(64, Math.floor(Math.min(availW, availH)));
+    this.dpr = Math.min(window.devicePixelRatio || 1, 3);
     this.cssSize = size;
-    this.canvas.style.width = `${size}px`;
-    this.canvas.style.height = `${size}px`;
-    this.canvas.width = Math.round(size * dpr);
-    this.canvas.height = Math.round(size * dpr);
+    this.frame.style.width = `${size}px`;
+    this.frame.style.height = `${size}px`;
+    for (const c of [this.canvas, this.overlay]) {
+      c.width = Math.round(size * this.dpr);
+      c.height = Math.round(size * this.dpr);
+    }
     this.draw();
+    this.onLayout?.();
   }
 
   private draw(): void {
