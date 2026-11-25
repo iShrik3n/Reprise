@@ -150,6 +150,15 @@ npm run preview  # serve the production build
 
 The production build is a static site (`dist/`), about 50 kB of JavaScript and CSS, that can be hosted anywhere.
 
+### Deploying
+
+```bash
+npm run deploy                                          # tests, builds, rsyncs to ssh host "ct-reprise"
+DEPLOY_HOST=user@host DEPLOY_PATH=/var/www/reprise npm run deploy
+```
+
+`scripts/deploy.sh` uploads the new hashed assets first, then `index.html`, then removes stale files, so nobody mid-deploy loads a page whose scripts aren't there yet. It finishes with a health check. The host only needs a static file server: serve `/assets/` with a long immutable cache and `index.html` with `Cache-Control: no-cache`.
+
 ### Browser support
 
 Current Chrome, Edge, Firefox and Safari. It needs ES2022, module Web Workers, `OfflineAudioContext` and Canvas 2D. Which formats decode depends on the browser: mp3, wav and m4a/AAC work broadly, while ogg/opus support varies by browser and version (older Safari can't decode them). If a file won't decode, Reprise says so.
