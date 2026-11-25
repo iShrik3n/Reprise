@@ -7,6 +7,7 @@ import { decodeToMono, looksLikeAudio } from '../audio/decode';
 import { renderDemo } from '../audio/demo';
 import { Player } from '../audio/player';
 import { encodeWav } from '../audio/wav';
+import type { ColorMode } from '../color/frameColor';
 import type { RenderMode } from '../render/painters';
 import { AbortError, AnalysisClient } from '../worker/client';
 import type { RenderPayload, UpdateRequest } from '../worker/protocol';
@@ -107,13 +108,13 @@ export class App {
   }
 
   private async run(id: number, samples: Float32Array<ArrayBuffer>, sampleRate: number): Promise<void> {
-    const { mode, palette, enhance, preset } = this.settings;
+    const { mode, palette, enhance, preset, color } = this.settings;
     try {
       const payload = await this.client.analyze(
         samples,
         sampleRate,
         { weights: WEIGHT_PRESETS[preset] },
-        { mode, palette, enhance },
+        { mode, palette, enhance, color },
         (stage, f) => id === this.runId && this.progress.show(stage, f),
       );
       if (id !== this.runId) return;
@@ -267,6 +268,15 @@ export class App {
       ],
       s.preset,
       (preset) => void this.change({ preset }, { weights: WEIGHT_PRESETS[preset] }),
+    );
+    segmented<ColorMode>(
+      $('color'),
+      [
+        { value: 'relative', label: 'relative', title: "Colors spread across this song's own harmonic range" },
+        { value: 'absolute', label: 'absolute', title: 'The same harmony gets the same hue in every song' },
+      ],
+      s.color,
+      (color) => void this.change({ color }, { view: { color } }),
     );
     paletteSwatches($('palettes'), s.palette, (palette) => void this.change({ palette }, { view: { palette } }));
     toggle($<HTMLButtonElement>('enhance'), s.enhance, (enhance) => void this.change({ enhance }, { view: { enhance } }));

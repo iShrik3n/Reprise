@@ -45,6 +45,7 @@ The image is symmetric, because "a sounds like b" is the same statement as "b so
 | **Click** | Seek to that moment (the column's time) and play. While playing, a cross-hair moves along the diagonal at (t, t). |
 | **Space** / **← →** | Play/pause, and jump 5 s back or forward. |
 | **listen to** | Compare moments by **harmony** (notes and chords), **timbre** (tone color), or **both**. |
+| **color** | **relative** (default) spreads this song's own harmonic range across the color wheel. **absolute** gives the same harmony the same hue in every song. |
 | **Palette dots** | Spectrum, Nocturne, Ember, Ink, Paper. |
 | **enhance** | Smooths along the diagonals so repeated passages read as clean lines. |
 | **export** | Saves a **4096 × 4096 PNG** rendered at full resolution (not upscaled). That's about 35 cm square at 300 dpi. |
@@ -103,6 +104,14 @@ Every time bin gets a color in **OKLCH**, a perceptual color space in which ligh
 - **Hue** comes from where the harmony sits on the **circle of fifths**. Pitch class *p* sits at angle 2π·(7p mod 12)/12, so C, G, D, A… are neighbors. The hue is the chroma-weighted circular mean of those angles, with squared weights to favor the dominant notes, smoothed over about 0.4 s. Harmonically related chords therefore get related colors, and the tritone sits on the opposite side of the wheel.
 - **Lightness** comes from loudness, as a percentile within the song.
 - **Saturation** comes from tonality: low spectral flatness combined with a focused pitch profile (the length of that circular mean). Drums and noise come out greyish, and sustained harmony comes out vivid.
+
+**Relative color** (the default). Most songs stay in one key, whose notes are neighbors on the circle of fifths, so the absolute mapping above reaches only about a quarter of the wheel, and dense mixes (drums, distortion, reverb) look noisy and come out desaturated. Relative mode adapts the colors to the song:
+
+- **Hue:** the circle is cut at the widest gap the song never visits, and the song's hues are unwrapped and spread over up to 300° of the wheel. Half of the spreading is rank-based (histogram equalization, so every color gets used) and half is linear (so big harmonic jumps still look bigger than small ones). The mapping is monotonic, so harmonic neighbors keep neighboring colors, and the song's typical harmony stays at the center, so the key still sets the overall color. Stretching is capped at 4×, so a nearly static song doesn't turn tiny wobbles into a rainbow.
+- **Saturation:** a moment is at least as saturated as its tonality *rank* within the song, so the song's most tonal passages always get full color.
+- Silence is ignored when measuring the song.
+
+On a one-key test signal with a dense mix, this widens the hue range from about 95° to about 300°.
 
 In **bloom** mode, pixel (i, j) starts from the palette background and moves toward the OKLab midpoint of the two moments' colors in proportion to their similarity. Near-identical moments get a small extra lift in lightness (the glow). Colors are gamut-mapped by reducing chroma, and the conversion to 8-bit sRGB uses a lookup table indexed by √value, which gives fine resolution in the darks where banding would show.
 
@@ -163,7 +172,7 @@ docs/         README images, rendered from the demo
 
 ## Tests
 
-`npm test` runs about 70 tests on synthetic signals:
+`npm test` runs 75 tests on synthetic signals:
 
 - **FFT**: matches a naive DFT and satisfies Parseval's theorem.
 - **Chroma**: a pure sine (A4, C4, G3, F♯5) gives a constant chroma peak at its pitch class in every frame, clearly dominant.
@@ -171,6 +180,7 @@ docs/         README images, rendered from the demo
 - **No structure**: white noise produces a flat lag profile in every mode. Prominence is measured in units of the matrix's own off-diagonal spread, because the modes have very different raw ranges.
 - **Features separate what they should**: chroma groups the same pitch across timbres, and MFCC groups the same timbre across pitches.
 - **Color**: OKLab round-trips; gamut mapping stays in sRGB; C→G is a 30° hue step and C→F♯ is 180°; noise is less saturated than tones; louder moments are lighter.
+- **Relative color**: a one-key song spreads from under 95° to over 280° of the wheel; harmonic order is preserved, even across the 0/1 seam; near-static songs stay near-static; the song stays centered on its typical harmony; silence is ignored.
 - **Painters**: bloom's diagonal is the color timeline; lag turns a diagonal into a horizontal line; print is symmetric and sparse; enhancement keeps stripes and dilutes isolated spikes.
 - **Engine**: each change recomputes only what it invalidates; export renders natively without disturbing the on-screen state.
 - **Timeline**: pixel ↔ time mapping and the tooltip text (`0:42 ↔ 1:58`, `0:42 · echo of 0:12 (lag 0:30)`).

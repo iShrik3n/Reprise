@@ -91,6 +91,93 @@ export function frameDescriptors(bins: BinFeatures): FrameDescriptors {
   return { hue, tonal, loud };
 }
 
+/** Absolute: hue means the same harmony in every song. Relative: each song is spread over the whole wheel. */
+export type ColorMode = 'relative' | 'absolute';
+
+export interface RelativeOptions {
+  /** Widest arc of the color wheel the song may use, in turns. A gap is kept so the two harmonic extremes don't meet. */
+  maxArc: number;
+  /** Most a song's harmonic range may be stretched; stops near-static songs from turning tiny wobbles into a rainbow. */
+  maxStretch: number;
+}
+
+const DEFAULT_RELATIVE: RelativeOptions = { maxArc: 5 / 6, maxStretch: 4 };
+
+const wrap01 = (h: number) => ((h % 1) + 1) % 1;
+
+/** Fraction of `sorted` strictly below v, scaled to 0..1. */
+function rankIn(sorted: ArrayLike<number>, v: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] < v) lo = mid + 1;
+    else hi = mid;
+  }
+  return sorted.length > 1 ? Math.min(1, lo / (sorted.length - 1)) : 0.5;
+}
+
+/**
+ * Make the colors relative to the song itself.
+ *
+ * Most songs stay in one key, whose notes are neighbors on the circle of fifths, so the
+ * absolute mapping only reaches about a quarter of the color wheel. Here:
+ *
+ * Hue. Cut the circle at the widest gap the song never visits, unwrap its hues into a line,
+ *   and spread them over up to `maxArc` of the wheel. The spreading is half rank-based
+ *   (histogram equalization, so every color gets used) and half linear (so big harmonic jumps
+ *   still look bigger than small ones). The mapping is monotonic, so harmonically neighboring
+ *   moments keep neighboring colors, and the song's typical harmony stays at the center, so the
+ *   key still sets the overall color. Stretching is capped at `maxStretch`.
+ * Saturation. A moment is at least as saturated as its tonality rank within the song, so the
+ *   song's most tonal passages always get full color while its noisiest stay muted.
+ * Lightness is already relative (a loudness percentile).
+ *
+ * Silent bins are ignored when measuring the song.
+ */
+export function relativeDescriptors(
+  desc: FrameDescriptors,
+  silent: Uint8Array,
+  opts: RelativeOptions = DEFAULT_RELATIVE,
+): FrameDescriptors {
+  const n = desc.hue.length;
+  const voiced: number[] = [];
+  for (let i = 0; i < n; i++) if (!silent[i]) voiced.push(i);
+  const m = voiced.length;
+  if (m < 8) return desc;
+
+  // Cut the circle at the end of the largest unvisited gap.
+  const hs = voiced.map((i) => desc.hue[i]).sort((a, b) => a - b);
+  let gap = -1;
+  let cut = 0;
+  for (let k = 0; k < m; k++) {
+    const g = k === m - 1 ? hs[0] + 1 - hs[m - 1] : hs[k + 1] - hs[k];
+    if (g > gap) {
+      gap = g;
+      cut = hs[(k + 1) % m];
+    }
+  }
+  const unwrap = (h: number) => wrap01(h - cut);
+  const us = Float64Array.from(voiced, (i) => unwrap(desc.hue[i])).sort();
+  const q = (p: number) => us[Math.min(m - 1, Math.max(0, Math.round(p * (m - 1))))];
+  const lo = q(0.02);
+  const span = Math.max(1e-6, q(0.98) - lo);
+  const median = q(0.5);
+  const arc = Math.min(opts.maxArc, opts.maxStretch * span);
+  const spread = (u: number) => 0.5 * rankIn(us, u) + 0.5 * Math.min(1, Math.max(0, (u - lo) / span));
+  const center = spread(median);
+
+  const tonalSorted = Float64Array.from(voiced, (i) => desc.tonal[i]).sort();
+
+  const hue = new Float32Array(n);
+  const tonal = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    hue[i] = wrap01(cut + median + (spread(unwrap(desc.hue[i])) - center) * arc);
+    tonal[i] = Math.max(desc.tonal[i], rankIn(tonalSorted, desc.tonal[i]));
+  }
+  return { hue, tonal, loud: desc.loud };
+}
+
 /** OKLab color per bin (n×3), with silent bins set to the background. */
 export function frameColors(desc: FrameDescriptors, silent: Uint8Array, palette: Palette): Float32Array {
   const n = desc.hue.length;

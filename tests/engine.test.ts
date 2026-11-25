@@ -34,6 +34,10 @@ describe('AnalysisEngine (worker core)', () => {
     expect(Object.keys(palette.timings)).toEqual(['paint']);
     expect(differing(first.rgba, palette.rgba)).toBeGreaterThan(1000);
 
+    const color = engine.update({ view: { color: 'absolute' } });
+    expect(Object.keys(color.timings)).toEqual(['paint']);
+    expect(differing(palette.rgba, color.rgba)).toBeGreaterThan(1000);
+
     const mode = engine.update({ view: { mode: 'heatmap' } });
     expect(Object.keys(mode.timings)).toEqual(['paint']);
 

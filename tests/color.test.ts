@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { binFeatures } from '../src/analysis/pipeline';
 import { extractFeatures } from '../src/analysis/features';
 import { DEFAULT_OPTIONS } from '../src/analysis/types';
-import { fifthsHue, fifthsPosition, frameColors, frameDescriptors } from '../src/color/frameColor';
+import { fifthsHue, fifthsPosition, frameColors, frameDescriptors, relativeDescriptors } from '../src/color/frameColor';
+import { renderDemo } from '../src/audio/demo';
 import { encode8, labToLinear, labToRgb8, lchToLab, lchToLabInGamut, linearToLab, srgbEncode } from '../src/color/oklab';
 import { PALETTE_ORDER, PALETTES } from '../src/color/palettes';
 import { mulberry32 } from '../src/util/random';
@@ -116,5 +117,92 @@ describe('frame colors from real signals', () => {
         }
       }
     }
+  });
+});
+
+describe('relative colors', () => {
+  const desc = (hue: number[], tonal = hue.map(() => 0.5)) => ({
+    hue: Float32Array.from(hue),
+    tonal: Float32Array.from(tonal),
+    loud: Float32Array.from(hue.map(() => 0.5)),
+  });
+  const none = (n: number) => new Uint8Array(n);
+  /** Smallest arc (degrees) containing all hues. */
+  const arcOf = (h: ArrayLike<number>) => {
+    const s = Array.from(h).sort((a, b) => a - b);
+    let gap = 0;
+    for (let k = 0; k < s.length; k++) gap = Math.max(gap, k === s.length - 1 ? s[0] + 1 - s[k] : s[k + 1] - s[k]);
+    return (1 - gap) * 360;
+  };
+
+  it('spreads a one-key song (a quarter of the wheel) across most of it', () => {
+    const rand = mulberry32(9);
+    const hues = Array.from({ length: 300 }, () => 0.1 + 0.25 * rand());
+    expect(arcOf(hues)).toBeLessThan(95);
+    const rel = relativeDescriptors(desc(hues), none(300));
+    expect(arcOf(rel.hue)).toBeGreaterThan(280);
+    expect(arcOf(rel.hue)).toBeLessThanOrEqual(300 + 1e-3); // keeps a gap between the extremes
+  });
+
+  it('preserves the harmonic order (neighbors stay neighbors), even across the 0/1 seam', () => {
+    const rand = mulberry32(10);
+    const unwrapped = Array.from({ length: 200 }, () => rand() * 0.3); // 0.9 … 1.2 on the circle
+    const hues = unwrapped.map((u) => (0.9 + u) % 1);
+    const rel = relativeDescriptors(desc(hues), none(200)).hue;
+    const order = unwrapped.map((_, i) => i).sort((a, b) => unwrapped[a] - unwrapped[b]);
+    const base = rel[order[0]];
+    let prev = -1;
+    for (const i of order) {
+      const u = (((rel[i] - base) % 1) + 1) % 1;
+      expect(u).toBeGreaterThanOrEqual(prev - 1e-6);
+      prev = u;
+    }
+  });
+
+  it('caps the stretch so a near-static song stays near-static', () => {
+    const rand = mulberry32(11);
+    const hues = Array.from({ length: 200 }, () => 0.5 + 0.02 * rand()); // 7° of wobble
+    expect(arcOf(relativeDescriptors(desc(hues), none(200)).hue)).toBeLessThanOrEqual(4 * 7.2 + 0.5);
+  });
+
+  it('keeps the song centered on its typical harmony', () => {
+    const rand = mulberry32(12);
+    const hues = Array.from({ length: 301 }, () => 0.6 + 0.2 * rand());
+    const rel = relativeDescriptors(desc(hues), none(301)).hue;
+    const medianIdx = hues.map((_, i) => i).sort((a, b) => hues[a] - hues[b])[150];
+    expect(hueDist(rel[medianIdx], hues[medianIdx])).toBeLessThan(1);
+  });
+
+  it('gives the most tonal moments full color without muting tonal songs', () => {
+    const tonal = Array.from({ length: 100 }, (_, i) => 0.2 + 0.4 * (i / 99)); // a dense mix: 0.2–0.6
+    const rel = relativeDescriptors(desc(tonal.map((_, i) => 0.1 + i / 1000), tonal), none(100));
+    expect(Math.max(...rel.tonal)).toBe(1);
+    rel.tonal.forEach((v, i) => expect(v).toBeGreaterThanOrEqual(tonal[i] - 1e-6));
+  });
+
+  it('ignores silence when measuring the song, and leaves tiny inputs alone', () => {
+    const rand = mulberry32(13);
+    const hues = Array.from({ length: 100 }, () => 0.2 + 0.1 * rand());
+    const silent = none(110);
+    const withSilence = [...hues, ...Array.from({ length: 10 }, () => 0.7)];
+    silent.fill(1, 100);
+    const a = relativeDescriptors(desc(hues), none(100)).hue;
+    const b = relativeDescriptors(desc(withSilence), silent).hue;
+    for (let i = 0; i < 100; i++) expect(b[i]).toBeCloseTo(a[i], 6);
+    const tiny = desc([0.1, 0.2, 0.3]);
+    expect(relativeDescriptors(tiny, none(3))).toBe(tiny);
+  });
+
+  it('widens a real one-key, dense-mix signal (demo A section + noise)', () => {
+    const sec = 8 * SR;
+    const demoA = renderDemo(SR).subarray(0, sec);
+    const rand = mulberry32(1);
+    const signal = Float32Array.from({ length: 3 * sec }, (_, i) => demoA[i % sec] + 0.12 * (rand() * 2 - 1));
+    const bins = binFeatures(extractFeatures(signal, SR, DEFAULT_OPTIONS), 256);
+    const abs = frameDescriptors(bins);
+    const rel = relativeDescriptors(abs, bins.silent);
+    expect(arcOf(rel.hue)).toBeGreaterThan(arcOf(abs.hue) * 1.8);
+    const mean = (a: Float32Array) => a.reduce((s, v) => s + v, 0) / a.length;
+    expect(mean(rel.tonal)).toBeGreaterThan(mean(abs.tonal));
   });
 });

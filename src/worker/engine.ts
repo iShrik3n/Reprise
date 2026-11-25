@@ -23,7 +23,13 @@ import {
   type SimilarityMatrix,
   type SimilarityWeights,
 } from '../analysis/types';
-import { frameColors, frameDescriptors, type FrameDescriptors } from '../color/frameColor';
+import {
+  frameColors,
+  frameDescriptors,
+  relativeDescriptors,
+  type ColorMode,
+  type FrameDescriptors,
+} from '../color/frameColor';
 import { PALETTES, type PaletteId } from '../color/palettes';
 import { paintBloom, paintHeatmap, paintLag, paintPrint, type RenderMode } from '../render/painters';
 
@@ -32,9 +38,16 @@ export interface ViewSettings {
   palette: PaletteId;
   /** Diagonal path enhancement on/off. */
   enhance: boolean;
+  /** Colors relative to this song (full wheel) or absolute (same harmony → same hue in every song). */
+  color: ColorMode;
 }
 
-export const DEFAULT_VIEW: ViewSettings = { mode: 'bloom', palette: 'spectrum', enhance: true };
+export const DEFAULT_VIEW: ViewSettings = { mode: 'bloom', palette: 'spectrum', enhance: true, color: 'relative' };
+
+/** Descriptors as the chosen color mode wants them. */
+function colorDescriptors(desc: FrameDescriptors, silent: Uint8Array, mode: ColorMode): FrameDescriptors {
+  return mode === 'relative' ? relativeDescriptors(desc, silent) : desc;
+}
 
 export interface RenderPayload {
   size: number;
@@ -99,7 +112,7 @@ export class AnalysisEngine {
     if (req.view) {
       const next = { ...this.view, ...req.view };
       if (next.enhance !== this.view.enhance) this.display = this.mask = null;
-      if (next.palette !== this.view.palette) this.colors = null;
+      if (next.palette !== this.view.palette || next.color !== this.view.color) this.colors = null;
       this.view = next;
     }
     return this.render(onProgress);
@@ -138,7 +151,8 @@ export class AnalysisEngine {
     const rgba = this.time('paint', () => {
       if (view.mode === 'heatmap') return paintHeatmap(s, palette);
       if (view.mode === 'print') return paintPrint(recurrencePlot(s), bins.size, palette);
-      const colors = frameColors(frameDescriptors(bins), bins.silent, palette);
+      const desc = colorDescriptors(frameDescriptors(bins), bins.silent, view.color);
+      const colors = frameColors(desc, bins.silent, palette);
       return view.mode === 'lag' ? paintLag(s, colors, palette) : paintBloom(s, colors, palette);
     });
     onProgress?.('painting', 1);
@@ -174,7 +188,10 @@ export class AnalysisEngine {
       });
     }
     const palette = PALETTES[this.view.palette];
-    if (!this.colors) this.colors = frameColors(this.descriptors!, bins.silent, palette);
+    if (!this.colors) {
+      const desc = colorDescriptors(this.descriptors!, bins.silent, this.view.color);
+      this.colors = frameColors(desc, bins.silent, palette);
+    }
 
     onProgress?.('painting', 0.85);
     const rgba = this.time('paint', () => {
