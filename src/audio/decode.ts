@@ -6,7 +6,7 @@
  * (Decoding has to happen on the main thread: workers have no AudioContext.)
  */
 export interface DecodedAudio {
-  samples: Float32Array;
+  samples: Float32Array<ArrayBuffer>;
   sampleRate: number;
   duration: number;
 }

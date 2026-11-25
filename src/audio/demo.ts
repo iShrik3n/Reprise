@@ -151,7 +151,7 @@ function renderSection(buf: Float32Array, sr: number, rand: () => number, sectio
 }
 
 /** Render the demo as mono samples at `sampleRate`, peak-normalized to 0.9. */
-export function renderDemo(sampleRate = 22050): Float32Array {
+export function renderDemo(sampleRate = 22050): Float32Array<ArrayBuffer> {
   const total = DEMO_FORM.length * DEMO_SECTION_SECONDS;
   const buf = new Float32Array(Math.ceil(total * sampleRate));
   const rand = mulberry32(20261125);

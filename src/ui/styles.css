@@ -115,6 +115,40 @@ button:focus-visible {
   outline: none;
 }
 
+.actions {
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+  white-space: nowrap;
+}
+.switch {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.switch .dim {
+  margin-left: 0;
+}
+.switch button {
+  color: var(--dim);
+  border-bottom-color: transparent;
+}
+.switch button[aria-pressed='true'] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  #controls {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .switch .dim {
+    display: none;
+  }
+}
+
 #drop-hint {
   position: fixed;
   inset: 10px;

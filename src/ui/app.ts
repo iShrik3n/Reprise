@@ -1,12 +1,12 @@
 /**
- * App wiring for milestone 1: load (demo or file) → analyze on the main thread → paint grayscale.
- * Milestone 2 moves `analyze` into a Web Worker behind the same call shape.
+ * App wiring: load (demo or file) → decode on the main thread → analyze + paint in the
+ * worker → show. The main thread only decodes audio and blits pixels.
  */
-import { analyze } from '../analysis/pipeline';
-import { ANALYSIS_SAMPLE_RATE, type AnalysisResult } from '../analysis/types';
+import { ANALYSIS_SAMPLE_RATE, WEIGHT_PRESETS, type WeightPreset } from '../analysis/types';
 import { decodeToMono, looksLikeAudio } from '../audio/decode';
 import { renderDemo } from '../audio/demo';
-import { paintGrayscale } from '../render/painters';
+import { AbortError, AnalysisClient } from '../worker/client';
+import type { RenderPayload } from '../worker/protocol';
 import { setupFileInput } from './dropzone';
 import { Progress } from './progress';
 import { Stage } from './stage';
@@ -21,20 +21,21 @@ export function formatTime(seconds: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
-/** Let the browser paint (progress label, dimmed canvas) before blocking work starts. */
-const nextPaint = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
-
 export class App {
   private readonly stage = new Stage($<HTMLCanvasElement>('art'));
   private readonly progress = new Progress($('progress'));
+  private readonly client = new AnalysisClient();
   private readonly title = $('title');
   private readonly meta = $('meta');
   private readonly message = $('message');
   private runId = 0;
-  result: AnalysisResult | null = null;
+  private preset: WeightPreset = 'blend';
+  private hasResult = false;
+  current: RenderPayload | null = null;
 
   start(): void {
     setupFileInput($<HTMLButtonElement>('open'), $<HTMLInputElement>('file'), (f) => void this.loadFile(f));
+    this.setupListenSwitch();
     void this.loadDemo();
   }
 
@@ -42,9 +43,9 @@ export class App {
     const id = ++this.runId;
     this.begin('demo · a generated loop');
     this.progress.show('synthesizing');
-    await nextPaint();
-    const samples = renderDemo(ANALYSIS_SAMPLE_RATE);
-    await this.run(id, samples, ANALYSIS_SAMPLE_RATE);
+    await new Promise((r) => setTimeout(r, 0)); // let the label paint before synthesis
+    if (id !== this.runId) return;
+    await this.run(id, renderDemo(ANALYSIS_SAMPLE_RATE), ANALYSIS_SAMPLE_RATE);
   }
 
   async loadFile(file: File): Promise<void> {
@@ -60,8 +61,7 @@ export class App {
       if (id !== this.runId) return;
       await this.run(id, decoded.samples, decoded.sampleRate);
     } catch (err) {
-      if (id !== this.runId) return;
-      this.fail(err);
+      if (id === this.runId) this.fail(err);
     }
   }
 
@@ -72,20 +72,52 @@ export class App {
     this.stage.setLoading(true);
   }
 
-  private async run(id: number, samples: Float32Array, sampleRate: number): Promise<void> {
-    this.progress.show('analyzing');
-    await nextPaint();
-    if (id !== this.runId) return;
-    const t0 = performance.now();
-    const result = analyze(samples, sampleRate);
-    const rgba = paintGrayscale(result.display);
-    if (id !== this.runId) return;
-    this.result = result;
-    this.stage.setImage(rgba, result.size);
+  private async run(id: number, samples: Float32Array<ArrayBuffer>, sampleRate: number): Promise<void> {
+    try {
+      const payload = await this.client.analyze(
+        samples,
+        sampleRate,
+        { weights: WEIGHT_PRESETS[this.preset] },
+        (stage, f) => id === this.runId && this.progress.show(stage, f),
+      );
+      if (id === this.runId) this.show(payload);
+    } catch (err) {
+      if (!(err instanceof AbortError) && id === this.runId) this.fail(err);
+    }
+  }
+
+  private show(payload: RenderPayload): void {
+    this.current = payload;
+    this.hasResult = true;
+    this.stage.setImage(payload.rgba, payload.size);
     this.stage.setLoading(false);
     this.progress.hide();
-    this.meta.textContent = `${formatTime(result.duration)} · ${result.size}×${result.size}`;
-    console.info(`analysis: ${(performance.now() - t0).toFixed(0)} ms for ${result.duration.toFixed(1)} s of audio`);
+    this.meta.textContent = `${formatTime(payload.duration)} · ${payload.size}×${payload.size}`;
+    const t = Object.entries(payload.timings).map(([k, v]) => `${k} ${v.toFixed(0)}ms`);
+    console.info(`[reprise] ${t.join(', ')}`);
+  }
+
+  private setupListenSwitch(): void {
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('#listen button'));
+    const sync = () => buttons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.preset === this.preset)));
+    sync();
+    for (const b of buttons) {
+      b.addEventListener('click', async () => {
+        const preset = b.dataset.preset as WeightPreset;
+        if (preset === this.preset) return;
+        this.preset = preset;
+        sync();
+        if (!this.hasResult) return; // the running analysis will be superseded by the next load anyway
+        const id = this.runId;
+        this.stage.setLoading(true);
+        try {
+          const payload = await this.client.reweight(WEIGHT_PRESETS[preset], (stage, f) => this.progress.show(stage, f));
+          if (id === this.runId && preset === this.preset) this.show(payload);
+        } catch (err) {
+          if (!(err instanceof AbortError) && id === this.runId) this.fail(err);
+        }
+      });
+    }
   }
 
   private fail(err: unknown): void {

@@ -56,6 +56,49 @@ export function l2NormalizeRows(m: FeatureMatrix, eps = 1e-9): void {
   }
 }
 
+/** Mean of a scalar series per bin. */
+export function aggregateMean(values: Float32Array, edges: Int32Array): Float32Array {
+  const n = edges.length - 1;
+  const out = new Float32Array(n);
+  for (let b = 0; b < n; b++) {
+    const s = edges[b];
+    const e = Math.max(edges[b + 1], s + 1);
+    let acc = 0;
+    for (let r = s; r < e; r++) acc += values[r];
+    out[b] = acc / (e - s);
+  }
+  return out;
+}
+
+/**
+ * Standardize each column to zero mean and unit variance, in place, using only rows where
+ * `include` is 1 (e.g. non-silent bins) for the statistics. Without this, MFCC vectors are
+ * dominated by the song's average timbre and every frame looks alike.
+ */
+export function zscoreColumns(m: FeatureMatrix, include?: Uint8Array): void {
+  const { data, rows, dims } = m;
+  for (let d = 0; d < dims; d++) {
+    let n = 0;
+    let mean = 0;
+    for (let r = 0; r < rows; r++) {
+      if (include && !include[r]) continue;
+      mean += data[r * dims + d];
+      n++;
+    }
+    if (n === 0) continue;
+    mean /= n;
+    let varSum = 0;
+    for (let r = 0; r < rows; r++) {
+      if (include && !include[r]) continue;
+      const x = data[r * dims + d] - mean;
+      varSum += x * x;
+    }
+    const sd = Math.sqrt(varSum / n);
+    const inv = sd > 1e-9 ? 1 / sd : 0;
+    for (let r = 0; r < rows; r++) data[r * dims + d] = (data[r * dims + d] - mean) * inv;
+  }
+}
+
 /** Value at quantile q ∈ [0, 1] of `values` (exact for small inputs, strided sample for large ones). */
 export function quantile(values: ArrayLike<number>, q: number, maxSamples = 200_000): number {
   const n = values.length;
