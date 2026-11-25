@@ -3,8 +3,8 @@
  * Starting a new analysis while one is running terminates the worker (the only way to
  * stop a synchronous computation mid-flight) and rejects the old request with AbortError.
  */
-import type { AnalysisOptions, ProgressFn, SimilarityWeights } from '../analysis/types';
-import type { RenderPayload, WorkerRequest, WorkerResponse } from './protocol';
+import type { AnalysisOptions, ProgressFn } from '../analysis/types';
+import type { RenderPayload, UpdateRequest, ViewSettings, WorkerRequest, WorkerResponse } from './protocol';
 
 interface Pending {
   resolve: (p: RenderPayload) => void;
@@ -32,14 +32,16 @@ export class AnalysisClient {
     samples: Float32Array<ArrayBuffer>,
     sampleRate: number,
     options?: Partial<AnalysisOptions>,
+    view?: Partial<ViewSettings>,
     onProgress?: ProgressFn,
   ): Promise<RenderPayload> {
     if (this.pending.size > 0) this.restart();
-    return this.request({ type: 'analyze', id: 0, samples, sampleRate, options }, onProgress, [samples.buffer]);
+    return this.request({ type: 'analyze', id: 0, samples, sampleRate, options, view }, onProgress, [samples.buffer]);
   }
 
-  reweight(weights: SimilarityWeights, onProgress?: ProgressFn): Promise<RenderPayload> {
-    return this.request({ type: 'reweight', id: 0, weights }, onProgress);
+  /** Change weights and/or view; the worker recomputes only what those invalidate. */
+  update(req: UpdateRequest, onProgress?: ProgressFn): Promise<RenderPayload> {
+    return this.request({ type: 'update', id: 0, ...req }, onProgress);
   }
 
   private request(msg: WorkerRequest, onProgress?: ProgressFn, transfer: Transferable[] = []): Promise<RenderPayload> {

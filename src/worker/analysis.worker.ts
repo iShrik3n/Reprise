@@ -39,10 +39,10 @@ scope.onmessage = (e: MessageEvent<WorkerRequest>) => {
   try {
     switch (msg.type) {
       case 'analyze':
-        sendResult(msg.id, engine.analyze(msg.samples, msg.sampleRate, msg.options, throttledProgress(msg.id)));
+        sendResult(msg.id, engine.analyze(msg.samples, msg.sampleRate, msg.options, msg.view, throttledProgress(msg.id)));
         break;
-      case 'reweight':
-        sendResult(msg.id, engine.setWeights(msg.weights, throttledProgress(msg.id)));
+      case 'update':
+        sendResult(msg.id, engine.update({ weights: msg.weights, view: msg.view }, throttledProgress(msg.id)));
         break;
     }
   } catch (err) {
