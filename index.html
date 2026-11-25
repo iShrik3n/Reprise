@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <title>Reprise</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0b'/%3E%3Cpath d='M2 2L14 14M2 8L8 14M8 2L14 8' stroke='%23d8c8a8' stroke-width='1.2'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <main id="stage" aria-label="Artwork">
+      <canvas id="art" role="img" aria-label="Self-similarity matrix of the current song"></canvas>
+    </main>
+
+    <div id="progress" hidden>
+      <div class="bar"></div>
+      <span class="label"></span>
+    </div>
+
+    <footer id="controls">
+      <div class="caption">
+        <span id="title">—</span>
+        <span id="meta" class="dim"></span>
+      </div>
+      <div class="actions">
+        <button id="open" type="button">open a song</button>
+        <input id="file" type="file" hidden />
+      </div>
+    </footer>
+
+    <div id="drop-hint" aria-hidden="true"><span>drop to listen</span></div>
+    <div id="message" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

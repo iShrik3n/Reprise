@@ -1,0 +1,143 @@
+:root {
+  --bg: #0a0a0b;
+  --fg: #d9d4ca;
+  --dim: #77736b;
+  --hair: rgba(217, 212, 202, 0.14);
+  --accent: #d8c8a8;
+  --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --gutter: 56px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --gutter: 16px;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 12px/1.4 var(--font);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+#art {
+  display: block;
+  background: #000;
+  box-shadow: 0 0 80px rgba(0, 0, 0, 0.6);
+  transition: opacity 400ms ease;
+}
+
+#art.loading {
+  opacity: 0.35;
+}
+
+/* Hairline progress across the top. */
+#progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 18px;
+  pointer-events: none;
+}
+#progress .bar {
+  height: 1px;
+  width: 0;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+#progress .label {
+  position: absolute;
+  top: 6px;
+  left: var(--gutter);
+  font: 11px var(--mono);
+  color: var(--dim);
+}
+
+#controls {
+  position: fixed;
+  left: var(--gutter);
+  right: var(--gutter);
+  bottom: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  pointer-events: none;
+}
+#controls > * {
+  pointer-events: auto;
+}
+.caption {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dim {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-left: 10px;
+}
+
+button {
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  padding: 2px 0;
+  cursor: pointer;
+}
+button:hover,
+button:focus-visible {
+  color: #fff;
+  border-bottom-color: var(--accent);
+  outline: none;
+}
+
+#drop-hint {
+  position: fixed;
+  inset: 10px;
+  border: 1px dashed var(--hair);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  color: var(--dim);
+  font-size: 13px;
+}
+body.dragging #drop-hint {
+  opacity: 1;
+}
+
+#message {
+  position: fixed;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100vw - 32px));
+  color: #e7a48a;
+  text-align: center;
+  pointer-events: none;
+}
