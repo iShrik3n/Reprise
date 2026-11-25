@@ -19,6 +19,17 @@
 
     <div id="tooltip" role="status" hidden></div>
 
+    <div id="duet-bar" role="group" aria-label="Duet" hidden>
+      <span class="dim">duet</span>
+      <span id="duet-times">—</span>
+      <label class="mix" title="Crossfade: both in the middle, one alone at either end (double-click to center)">
+        <span class="dim">earlier</span>
+        <input id="duet-mix" type="range" min="-1" max="1" step="0.01" value="0" aria-label="Crossfade between the earlier and later moment" />
+        <span class="dim">later</span>
+      </label>
+      <button id="duet-stop" type="button">stop</button>
+    </div>
+
     <div id="progress" hidden>
       <div class="bar"></div>
       <span class="label"></span>
@@ -28,6 +39,7 @@
       <div class="left">
         <button id="play" class="transport" type="button" aria-label="Play">play</button>
         <span id="clock" class="dim" aria-live="off">0:00</span>
+        <button id="duet" class="toggle" type="button" title="Duet: click a pixel to hear both moments it compares together, earlier in the left ear, later in the right, advancing in sync. Shift-click works any time.">duet</button>
         <span class="caption"><span id="title">—</span><span id="meta" class="dim"></span></span>
       </div>
       <div class="actions">

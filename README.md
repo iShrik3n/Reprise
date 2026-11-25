@@ -43,7 +43,8 @@ The image is symmetric, because "a sounds like b" is the same statement as "b so
 |---|---|
 | **Hover** over the image | A tooltip shows the two moments the pixel compares, e.g. `0:42 ↔ 1:58`, and guides point back to both of them on the diagonal. |
 | **Click** | Seek to that moment (the column's time) and play. While playing, a cross-hair moves along the diagonal at (t, t). |
-| **Space** / **← →** | Play/pause, and jump 5 s back or forward. |
+| **duet** (or **shift-click**) | Hear the two moments a pixel compares *together*: the earlier one in the left ear, the later one in the right. Both advance in sync, so the marker slides from (X, Y) to (X + N, Y + N) along the line parallel to the diagonal. On a repetition stripe the two voices are the same music and line up exactly; off it they clash. The **earlier ◀ ● ▶ later** crossfader blends both in the middle and solos one at either end. **Esc** stops. |
+| **Space** / **← →** | Play/pause (or stop a duet), and jump 5 s back or forward. |
 | **listen to** | Compare moments by **harmony** (notes and chords), **timbre** (tone color), or **both**. |
 | **color** | **relative** (default) spreads this song's own harmonic range across the color wheel. **absolute** gives the same harmony the same hue in every song. |
 | **Palette dots** | Spectrum, Nocturne, Ember, Ink, Paper. |
@@ -115,7 +116,11 @@ On a one-key test signal with a dense mix, this widens the hue range from about 
 
 In **bloom** mode, pixel (i, j) starts from the palette background and moves toward the OKLab midpoint of the two moments' colors in proportion to their similarity. Near-identical moments get a small extra lift in lightness (the glow). Colors are gamut-mapped by reducing chroma, and the conversion to 8-bit sRGB uses a lookup table indexed by √value, which gives fine resolution in the darks where banding would show.
 
-### 6. The other views
+### 6. Duet playback
+
+The duet decodes the file a second time with the Web Audio API, at the playback context's own rate and in stereo (full quality, unlike the 22 kHz mono analysis copy). It does this only the first time you use it, and frees it when you load another song. It then starts two `AudioBufferSourceNode`s on the *same clock tick*, at offsets X and Y, each through its own gain and stereo panner. Because both voices are driven by one sample clock they stay locked together; two `<audio>` elements would drift apart into an audible flam. The crossfader uses an equal-power law (g₁² + g₂² = 1, so the loudness stays steady), and its stereo spread narrows as either voice is soloed.
+
+### 7. The other views
 
 - **Lag**: L(t, ℓ) = S(t, t − ℓ), with lag 0 at the bottom.
 - **Recurrence (print)**: R[i][j] = 1 when *j* is among *i*'s closest 8% of moments **and** *i* is among *j*'s. These are mutual nearest neighbors, found per row with quickselect. A per-row threshold, rather than one global cut-off, lets quiet passages leave marks next to loud ones.
@@ -163,7 +168,8 @@ src/
   color/      oklab (color math), frameColor (circle of fifths → color), palettes
   render/     painters: bloom, heatmap, lag, print (matrix → RGBA)
   worker/     engine (cached pipeline), worker adapter, protocol, promise client
-  audio/      decode, player, wav encoder, demo (synthesized A B A B C A piece)
+  audio/      decode, player, duet (two sample-locked playheads), wav encoder,
+              demo (synthesized A B A B C A piece)
   ui/         app wiring, stage, overlay, pointer, timeline (pure), controls,
               export, settings, progress, dropzone, styles
 tests/        Vitest suites on synthetic signals (no browser needed)
@@ -172,7 +178,7 @@ docs/         README images, rendered from the demo
 
 ## Tests
 
-`npm test` runs 75 tests on synthetic signals:
+`npm test` runs 80 tests on synthetic signals:
 
 - **FFT**: matches a naive DFT and satisfies Parseval's theorem.
 - **Chroma**: a pure sine (A4, C4, G3, F♯5) gives a constant chroma peak at its pitch class in every frame, clearly dominant.
@@ -184,6 +190,7 @@ docs/         README images, rendered from the demo
 - **Painters**: bloom's diagonal is the color timeline; lag turns a diagonal into a horizontal line; print is symmetric and sparse; enhancement keeps stripes and dilutes isolated spikes.
 - **Engine**: each change recomputes only what it invalidates; export renders natively without disturbing the on-screen state.
 - **Timeline**: pixel ↔ time mapping and the tooltip text (`0:42 ↔ 1:58`, `0:42 · echo of 0:12 (lag 0:30)`).
+- **Duet**: pixels map to the right earlier/later pair (in both square and lag views), and the crossfade is equal-power and monotonic, with the soloed voice centered.
 - **Demo**: deterministic, and its repeated sections are measurably more alike than its different ones.
 
 ## Limitations

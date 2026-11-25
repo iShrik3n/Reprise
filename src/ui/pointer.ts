@@ -6,7 +6,8 @@
 export interface PointerHandlers {
   hover(clientX: number, clientY: number): void;
   leave(): void;
-  tap(clientX: number, clientY: number): void;
+  /** `shift` is true for shift-click (mouse/pen). */
+  tap(clientX: number, clientY: number, shift: boolean): void;
 }
 
 const LONG_PRESS_MS = 380;
@@ -48,7 +49,7 @@ export function attachPointer(el: HTMLElement, h: PointerHandlers): void {
     down = null;
     longPress = false;
     if (wasLong) h.leave();
-    else if (moved <= TAP_SLOP_PX) h.tap(e.clientX, e.clientY);
+    else if (moved <= TAP_SLOP_PX) h.tap(e.clientX, e.clientY, e.shiftKey);
   });
 
   el.addEventListener('pointercancel', () => {

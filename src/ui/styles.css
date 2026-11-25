@@ -87,6 +87,49 @@ body {
   -webkit-backdrop-filter: blur(4px);
 }
 
+/* ── duet ────────────────────────────────────────────────── */
+
+#duet-bar {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px;
+  background: rgba(10, 10, 11, 0.82);
+  border: 1px solid var(--hair);
+  border-radius: 2px;
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+#duet-bar[hidden] {
+  display: none;
+}
+#duet-times {
+  font: 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+  min-width: 8.5em;
+}
+#duet-bar .mix {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#duet-mix {
+  width: 96px;
+  accent-color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  #duet-bar .mix .dim {
+    display: none;
+  }
+}
+
 /* ── progress & messages ─────────────────────────────────── */
 
 #progress {
