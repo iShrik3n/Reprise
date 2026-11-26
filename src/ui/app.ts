@@ -5,6 +5,8 @@
 import { ANALYSIS_SAMPLE_RATE, WEIGHT_PRESETS, type WeightPreset } from '../analysis/types';
 import { decodeToMono, looksLikeAudio } from '../audio/decode';
 import { renderDemo } from '../audio/demo';
+import { fetchYouTube, youtubeAvailable } from '../audio/youtube';
+import { parseYouTubeId } from '../util/youtube';
 import { Player } from '../audio/player';
 import { encodeWav } from '../audio/wav';
 import type { ColorMode } from '../color/frameColor';
@@ -49,9 +51,17 @@ export class App {
   private songTitle = '';
   private current: RenderPayload | null = null;
   private rafId = 0;
+  /** The optional YouTube backend answered /api/health. */
+  private youtube = false;
+  private fetchAbort: AbortController | null = null;
 
   start(): void {
-    setupFileInput($<HTMLButtonElement>('open'), $<HTMLInputElement>('file'), (f) => void this.loadFile(f));
+    setupFileInput($<HTMLButtonElement>('open'), $<HTMLInputElement>('file'), {
+      onFile: (f) => void this.loadFile(f),
+      onLink: (text) => void this.loadYouTube(text),
+      acceptLinks: () => this.youtube,
+    });
+    this.setupYouTube();
     this.setupControls();
     this.setupTransport();
     this.setupArtworkPointer();
@@ -82,21 +92,59 @@ export class App {
     }
     const id = ++this.runId;
     this.begin(file.name.replace(/\.[^.]+$/, ''));
-    this.progress.show('decoding');
-    this.player.load(file);
     try {
-      const decoded = await decodeToMono(await file.arrayBuffer(), ANALYSIS_SAMPLE_RATE);
-      if (id !== this.runId) return;
-      await this.run(id, decoded.samples, decoded.sampleRate);
+      await this.decodeAndRun(id, file);
     } catch (err) {
       if (id === this.runId) this.fail(err);
     }
   }
 
-  private begin(title: string): void {
-    this.showMessage('');
+  /** Fetch a YouTube video's audio through the Reprise API, then analyze it like a file. */
+  async loadYouTube(text: string): Promise<void> {
+    if (!this.youtube) return;
+    if (!parseYouTubeId(text)) {
+      this.showMessage("That doesn't look like a YouTube video link.");
+      return;
+    }
+    const id = ++this.runId;
+    this.begin('YouTube');
+    const abort = new AbortController();
+    this.fetchAbort = abort;
+    const started = performance.now();
+    const label = () => this.progress.show(`fetching from YouTube · ${Math.round((performance.now() - started) / 1000)}s`);
+    label();
+    const ticker = setInterval(label, 1000);
+    try {
+      const song = await fetchYouTube(text, abort.signal);
+      clearInterval(ticker);
+      if (id !== this.runId) return;
+      this.setTitle(song.title);
+      await this.decodeAndRun(id, song.file);
+    } catch (err) {
+      if (id === this.runId && !abort.signal.aborted) this.fail(err);
+    } finally {
+      clearInterval(ticker);
+      if (this.fetchAbort === abort) this.fetchAbort = null;
+    }
+  }
+
+  private async decodeAndRun(id: number, file: File): Promise<void> {
+    this.progress.show('decoding');
+    this.player.load(file);
+    const decoded = await decodeToMono(await file.arrayBuffer(), ANALYSIS_SAMPLE_RATE);
+    if (id !== this.runId) return;
+    await this.run(id, decoded.samples, decoded.sampleRate);
+  }
+
+  private setTitle(title: string): void {
     this.songTitle = title;
     this.title.textContent = title;
+  }
+
+  private begin(title: string): void {
+    this.fetchAbort?.abort(); // a newer load supersedes a YouTube fetch in flight
+    this.showMessage('');
+    this.setTitle(title);
     this.meta.textContent = '';
     this.analyzed = false;
     this.current = null;
@@ -308,6 +356,53 @@ export class App {
       button.textContent = 'export';
       button.disabled = !this.analyzed;
     }
+  }
+
+  // ── YouTube links (only when the optional backend is deployed) ──
+
+  private setupYouTube(): void {
+    const button = $<HTMLButtonElement>('youtube');
+    const form = $<HTMLFormElement>('yt-form');
+    const input = $<HTMLInputElement>('yt-url');
+    const close = () => {
+      form.hidden = true;
+      button.hidden = false;
+    };
+    button.addEventListener('click', () => {
+      button.hidden = true;
+      form.hidden = false;
+      input.focus();
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = input.value;
+      if (!parseYouTubeId(text)) {
+        this.showMessage("That doesn't look like a YouTube video link.");
+        return;
+      }
+      input.value = '';
+      close();
+      void this.loadYouTube(text);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') close();
+    });
+    input.addEventListener('blur', () => {
+      if (!input.value) close();
+    });
+    // Pasting a YouTube link anywhere on the page loads it.
+    window.addEventListener('paste', (e) => {
+      if (!this.youtube || e.target instanceof HTMLInputElement) return;
+      const text = e.clipboardData?.getData('text') ?? '';
+      if (parseYouTubeId(text)) {
+        e.preventDefault();
+        void this.loadYouTube(text);
+      }
+    });
+    void youtubeAvailable().then((ok) => {
+      this.youtube = ok;
+      button.hidden = !ok;
+    });
   }
 
   // ── keyboard & idle ────────────────────────────────────────

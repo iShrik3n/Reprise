@@ -41,6 +41,11 @@
         <span id="palettes" class="swatches" role="group" aria-label="Palette"></span>
         <button id="enhance" class="toggle" type="button" title="Path enhancement: smooth along diagonals so repeated passages read as clean lines">enhance</button>
         <button id="export" type="button" title="Save a 4096 × 4096 PNG for printing">export</button>
+        <button id="youtube" type="button" title="Paste a YouTube link (you can also paste or drop one anywhere on the page)" hidden>youtube</button>
+        <form id="yt-form" class="yt-form" hidden>
+          <input id="yt-url" type="url" inputmode="url" placeholder="paste a YouTube link" autocomplete="off" spellcheck="false" aria-label="YouTube link" />
+          <button type="submit">fetch</button>
+        </form>
         <button id="open" type="button">open a song</button>
         <input id="file" type="file" hidden />
       </div>

@@ -1,0 +1,10 @@
+[Unit]
+Description=Update yt-dlp and Deno (YouTube changes often; stale yt-dlp breaks downloads)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/yt-dlp --update
+ExecStart=-/usr/local/bin/deno upgrade --quiet
+ExecStartPost=/bin/systemctl try-restart reprise-api.service

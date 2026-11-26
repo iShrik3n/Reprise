@@ -277,6 +277,31 @@ button:disabled {
   }
 }
 
+/* ── YouTube link field ──────────────────────────────────── */
+
+.yt-form {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.yt-form[hidden],
+#youtube[hidden] {
+  display: none;
+}
+#yt-url {
+  width: min(260px, 60vw);
+  font: 11px var(--mono);
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--accent);
+  padding: 2px 0;
+  outline: none;
+}
+#yt-url::placeholder {
+  color: var(--dim);
+}
+
 /* ── drag & drop ─────────────────────────────────────────── */
 
 #drop-hint {

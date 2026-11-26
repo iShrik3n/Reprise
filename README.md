@@ -4,7 +4,7 @@
 
 Drop an audio file into Reprise and it draws a square in which *both axes are time*. Every pixel compares one moment of the song with another. Wherever the music repeats (a chorus coming back, a riff looping, a beat ticking), the picture shows a line, a block or a checkerboard. The colors come from the sound itself: harmony sets the hue, loudness sets the brightness, and tonality sets the saturation.
 
-Everything happens in your browser. Your audio is never uploaded anywhere, and there is no server.
+All analysis happens in your browser. Audio files you open never leave your device. Optionally, a deployment can include a small server that fetches the audio of a **YouTube link** you paste; see [YouTube links](#youtube-links-optional-server).
 
 <p align="center"><img src="docs/demo-bloom.png" width="560" alt="Reprise rendering of the built-in demo: colored tiles along a diagonal, repeated off-diagonal, with a glowing gold square"></p>
 
@@ -44,6 +44,7 @@ The image is symmetric, because "a sounds like b" is the same statement as "b so
 | **Hover** over the image | A tooltip shows the two moments the pixel compares, e.g. `0:42 ↔ 1:58`, and guides point back to both of them on the diagonal. |
 | **Click** | Seek to that moment (the column's time) and play. While playing, a cross-hair moves along the diagonal at (t, t). |
 | **Space** / **← →** | Play/pause, and jump 5 s back or forward. |
+| **youtube** | Paste a YouTube link, or paste or drop one anywhere on the page. Shown only when the optional server is deployed. |
 | **listen to** | Compare moments by **harmony** (notes and chords), **timbre** (tone color), or **both**. |
 | **color** | **relative** (default) spreads this song's own harmonic range across the color wheel. **absolute** gives the same harmony the same hue in every song. |
 | **Palette dots** | Spectrum, Nocturne, Ember, Ink, Paper. |
@@ -157,7 +158,30 @@ npm run deploy                                          # tests, builds, rsyncs 
 DEPLOY_HOST=user@host DEPLOY_PATH=/var/www/reprise npm run deploy
 ```
 
-`scripts/deploy.sh` uploads the new hashed assets first, then `index.html`, then removes stale files, so nobody mid-deploy loads a page whose scripts aren't there yet. It finishes with a health check. The host only needs a static file server: serve `/assets/` with a long immutable cache and `index.html` with `Cache-Control: no-cache`.
+`scripts/deploy.sh` runs both test suites and builds. It then uploads the new hashed assets first, then `index.html`, then removes stale files, so nobody mid-deploy loads a page whose scripts aren't there yet. Next it syncs `server/` and `deploy/` to `/opt/reprise` and runs `deploy/provision.sh` with sudo. That script is idempotent: it installs nginx, ffmpeg, yt-dlp and Deno (checking their published SHA-256 sums), plus the `reprise-api` service, the update timer and the nginx site. Finally it health-checks both the page and the API. The SSH user needs passwordless sudo on a Debian/Ubuntu host.
+
+For purely static hosting (no YouTube option), serving `dist/` is enough: give `/assets/` a long immutable cache and `index.html` `Cache-Control: no-cache`.
+
+### YouTube links (optional server)
+
+Browsers can't read YouTube's audio directly, so a deployment can add a small API (`server/reprise_api.py`, Python standard library only) behind nginx:
+
+1. The browser sends the link to `POST /api/youtube`.
+2. The server keeps **only the 11-character video ID** and rebuilds a canonical `https://www.youtube.com/watch?v=<id>` URL itself. User text never reaches `yt-dlp`, so there are no other sites, no playlists and no command injection.
+3. [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) downloads the audio stream, preferring stereo m4a. If there is none, ffmpeg transcodes to AAC. yt-dlp needs [Deno](https://deno.com) for YouTube's JavaScript challenges.
+4. nginx serves the file from a cache (`/api/audio/<id>.m4a`, with range requests for seeking), and the browser analyzes it like any other file.
+
+Limits:
+- Videos must be 20 minutes or shorter, and live streams aren't accepted.
+- At most 150 MB per file and 2 downloads at a time.
+- At most 12 requests per 10 minutes per client.
+- The cache holds up to 1.5 GB and keeps files for up to 7 days.
+
+A daily systemd timer updates yt-dlp and Deno, because YouTube changes often and an outdated yt-dlp stops working. The page detects the server through `GET /api/health`; on purely static hosting the YouTube option simply doesn't appear.
+
+> **Note:** YouTube's Terms of Service don't allow downloading except through YouTube's own features, and most music on YouTube is copyrighted. The YouTube option is meant for personal or internal deployments; think twice before exposing it publicly.
+
+For development against a deployed server: `REPRISE_API=http://<host> npm run dev` proxies `/api` there.
 
 ### Browser support
 
@@ -172,16 +196,19 @@ src/
   color/      oklab (color math), frameColor (circle of fifths → color), palettes
   render/     painters: bloom, heatmap, lag, print (matrix → RGBA)
   worker/     engine (cached pipeline), worker adapter, protocol, promise client
-  audio/      decode, player, wav encoder, demo (synthesized A B A B C A piece)
+  audio/      decode, player, wav encoder, youtube (API client),
+              demo (synthesized A B A B C A piece)
   ui/         app wiring, stage, overlay, pointer, timeline (pure), controls,
               export, settings, progress, dropzone, styles
 tests/        Vitest suites on synthetic signals (no browser needed)
+server/       optional YouTube audio API (Python stdlib) and its unittest suite
+deploy/       nginx site, systemd units, idempotent provision.sh
 docs/         README images, rendered from the demo
 ```
 
 ## Tests
 
-`npm test` runs 75 tests on synthetic signals:
+`npm test` runs 77 tests on synthetic signals, and `python3 -m unittest discover -s server` runs the API's tests, with a stand-in for yt-dlp so no network is needed:
 
 - **FFT**: matches a naive DFT and satisfies Parseval's theorem.
 - **Chroma**: a pure sine (A4, C4, G3, F♯5) gives a constant chroma peak at its pitch class in every frame, clearly dominant.
@@ -193,6 +220,7 @@ docs/         README images, rendered from the demo
 - **Painters**: bloom's diagonal is the color timeline; lag turns a diagonal into a horizontal line; print is symmetric and sparse; enhancement keeps stripes and dilutes isolated spikes.
 - **Engine**: each change recomputes only what it invalidates; export renders natively without disturbing the on-screen state.
 - **Timeline**: pixel ↔ time mapping and the tooltip text (`0:42 ↔ 1:58`, `0:42 · echo of 0:12 (lag 0:30)`).
+- **YouTube links**: the browser and server parsers accept the same link shapes and reject look-alike hosts, other schemes, playlists and injection attempts. The server side also covers caching and pruning, error messages, rate limiting, and the canonical URL that yt-dlp receives.
 - **Demo**: deterministic, and its repeated sections are measurably more alike than its different ones.
 
 ## Limitations

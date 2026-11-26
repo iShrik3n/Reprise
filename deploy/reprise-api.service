@@ -1,0 +1,25 @@
+[Unit]
+Description=Reprise API (fetches YouTube audio for in-browser analysis)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=reprise
+Group=reprise
+ExecStart=/usr/bin/python3 /opt/reprise/server/reprise_api.py
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/var/cache/reprise
+Environment=XDG_CACHE_HOME=/var/cache/reprise/xdg
+Environment=DENO_DIR=/var/cache/reprise/deno
+Restart=on-failure
+RestartSec=3
+
+# Hardening: the service only needs to write its cache.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/cache/reprise
+
+[Install]
+WantedBy=multi-user.target
